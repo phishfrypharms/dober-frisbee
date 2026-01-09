@@ -2,151 +2,111 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Dober-Frisbee Atari</title>
     <style>
-        body { margin: 0; background: #222; overflow: hidden; display: flex; flex-direction: column; align-items: center; font-family: 'Courier New', monospace; color: white; }
-        canvas { background: #556B2F; border: 4px solid #fff; image-rendering: pixelated; margin-top: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        .ui { margin: 10px; font-weight: bold; font-size: 1.2rem; text-shadow: 2px 2px #000; }
-        .controls { display: grid; grid-template-columns: repeat(3, 75px); gap: 10px; margin-top: 15px; }
-        button { width: 75px; height: 75px; font-size: 28px; background: #444; color: #fff; border: 3px solid #fff; border-radius: 12px; touch-action: manipulation; active { background: #666; } }
+        body { margin: 0; background: #0a0a0a; overflow: hidden; display: flex; flex-direction: column; align-items: center; font-family: 'Arial Black', sans-serif; color: #fff; }
+        canvas { background: #32cd32; border: 5px solid #ffd700; image-rendering: pixelated; margin-top: 10px; box-shadow: 0 0 25px #00ff00; }
+        .ui { margin: 10px; font-size: 1.4rem; color: #00ff00; text-shadow: 2px 2px #000; letter-spacing: 2px; }
+        .controls { display: grid; grid-template-columns: repeat(3, 75px); gap: 12px; margin-top: 15px; }
+        button { width: 75px; height: 75px; font-size: 30px; background: linear-gradient(#444, #222); color: #0f0; border: 3px solid #0f0; border-radius: 15px; box-shadow: 0 4px #000; touch-action: manipulation; }
+        button:active { transform: translateY(4px); box-shadow: 0 0 #000; }
     </style>
 </head>
 <body>
-    <div class="ui">SCORE: <span id="score">0</span> | LEVEL: <span id="level">1</span></div>
+    <div class="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span></div>
     <canvas id="game"></canvas>
     <div class="controls">
         <div></div><button onclick="move('up')">▲</button><div></div>
         <button onclick="move('left')">◀</button><button onclick="move('down')">▼</button><button onclick="move('right')">▶</button>
     </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 320; canvas.height = 320;
+        let score = 0, lives = 3, gameOver = false, speedMult = 1, scrollY = 0;
+        const grid = 32;
+        const player = { x: 144, y: 240, w: 28, h: 20 };
+        let frisbees = [];
+        let enemies = [];
+        let dogCatcher = { x: -50, y: -50, active: false, speed: 1.5 };
+        let audioCtx, sirenOsc;
 
-<script>
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 300; canvas.height = 300;
-
-    let score = 0; let level = 1; let speedMult = 1;
-    const grid = 30;
-    const player = { x: 135, y: 270 };
-    const frisbee = { x: 135, y: 0 };
-    const bgColors = ['#556B2F', '#483D8B', '#8B4513', '#2F4F4F', '#4B0082', '#191970'];
-    let poops = [];
-    let audioCtx, audioStarted = false;
-
-    // Drawing the Doberman with Natural Ears & Cropped Tail
-    function drawDoberman(x, y) {
-        ctx.fillStyle = "#000"; // Main Body
-        ctx.fillRect(x + 5, y + 12, 20, 12); // Torso
-        ctx.fillRect(x + 20, y + 4, 8, 10); // Neck/Head
-        
-        // Natural Ears (Floppy/Rectangular Atari style)
-        ctx.fillRect(x + 17, y + 4, 4, 6); 
-        ctx.fillRect(x + 27, y + 4, 4, 6);
-        
-        // Cropped Tail (Small square stub)
-        ctx.fillRect(x + 2, y + 10, 4, 4);
-
-        // Tan Markings (Chest and Snout)
-        ctx.fillStyle = "#8B4513";
-        ctx.fillRect(x + 23, y + 8, 5, 3); // Snout
-        ctx.fillRect(x + 18, y + 14, 4, 4); // Chest
-    }
-
-    function createPoops() {
-        poops = [];
-        // Add more poops as levels increase
-        let count = Math.min(6 + level, 12); 
-        for(let i = 1; i < count; i++) {
-            poops.push({
-                x: Math.random() * 300,
-                y: (i % 8 + 1) * grid,
-                speed: (Math.random() * 1.5 + 1) * (i % 2 === 0 ? 1 : -1) * speedMult
-            });
+        function spawnFrisbees() {
+            frisbees = [];
+            for(let i = 0; i < 5; i++) frisbees.push({ x: (i * 60) + 20, y: 8, collected: false, glow: 0 });
         }
-    }
 
-    function move(dir) {
-        startAudio();
-        if(dir === 'up' && player.y > 0) player.y -= grid;
-        if(dir === 'down' && player.y < 270) player.y += grid;
-        if(dir === 'left' && player.x > 0) player.x -= grid;
-        if(dir === 'right' && player.x < 270) player.x += grid;
-    }
-
-    function startAudio() {
-        if (audioStarted) return;
-        audioStarted = true;
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        playAtariDub();
-    }
-
-    // Lo-fi Atari Bassline
-    function playAtariDub() {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'square';
-        // Alternating low tones for a "busy" feel
-        let baseFreq = level % 2 === 0 ? 52 : 44; 
-        osc.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
-        
-        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-        
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.4);
-        
-        // Slow dubstep-style tempo (approx 100 BPM)
-        setTimeout(playAtariDub, 600);
-    }
-
-    function update() {
-        ctx.clearRect(0, 0, 300, 300);
-        
-        // Draw Frisbee
-        ctx.fillStyle = '#FF4500';
-        ctx.beginPath(); 
-        ctx.ellipse(frisbee.x + 15, frisbee.y + 15, 12, 5, 0, 0, Math.PI * 2); 
-        ctx.fill();
-
-        drawDoberman(player.x, player.y);
-
-        // Draw and Move Poops
-        ctx.fillStyle = '#5C4033';
-        poops.forEach(p => {
-            p.x += p.speed;
-            if(p.x > 300) p.x = -grid; 
-            if(p.x < -grid) p.x = 300;
-            
-            ctx.fillRect(p.x + 6, p.y + 10, 18, 12); // Chunky poop pixels
-
-            // Collision Check
-            if(player.x < p.x + 20 && player.x + 20 > p.x && player.y === p.y) {
-                // Flash red on hit
-                canvas.style.borderColor = "red";
-                setTimeout(() => canvas.style.borderColor = "white", 100);
-                player.x = 135; player.y = 270; 
+        function drawBackground() {
+            ctx.fillStyle = "#228b22"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#32cd32";
+            scrollY = (scrollY + 1.5 * speedMult) % 40; 
+            for(let x=0; x<canvas.width; x+=40) {
+                for(let y=-40; y<canvas.height; y+=40) {
+                    ctx.fillRect(x + 10, y + scrollY, 6, 3);
+                }
             }
-        });
-
-        // Level Up Logic
-        if(player.y <= 0) {
-            score++; 
-            level++; 
-            speedMult += 0.15;
-            document.getElementById('score').innerText = score;
-            document.getElementById('level').innerText = level;
-            
-            // Visual Level Change
-            canvas.style.background = bgColors[level % bgColors.length];
-            
-            player.x = 135; 
-            player.y = 270;
-            createPoops();
         }
-        requestAnimationFrame(update);
-    }
 
-    createPoops();
-    update();
-</script>
+        function drawDoberman(x, y) {
+            ctx.fillStyle = "rgba(0,0,0,0.4)";
+            ctx.beginPath(); ctx.ellipse(x+16, y+24, 14, 5, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#111"; ctx.fillRect(x+4, y+8, 24, 14); 
+            ctx.fillRect(x+18, y, 10, 10);
+            ctx.fillStyle = "#cd853f"; ctx.fillRect(x+6, y+10, 8, 6); 
+            ctx.fillRect(x+24, y+6, 5, 4);
+        }
+
+        function spawnEnemies() {
+            enemies = [];
+            const types = ['sprinter', 'tank', 'wobbler'];
+            for (let i = 1; i < 7; i++) {
+                let type = types[Math.floor(Math.random() * types.length)];
+                let dir = (i % 2 === 0) ? 1 : -1;
+                enemies.push({ x: Math.random() * 320, y: i * grid, speed: (Math.random() * 1.5 + 1) * dir * speedMult, type: type, w: type==='tank'?55:28, h: 20, offset: Math.random()*100 });
+            }
+        }
+
+        function move(dir) {
+            if (gameOver) return;
+            if (dir === 'up' && player.y > 0) player.y -= grid;
+            if (dir === 'down' && player.y < 288) player.y += grid;
+            if (dir === 'left' && player.x > 10) player.x -= grid;
+            if (dir === 'right' && player.x < 280) player.x += grid;
+        }
+
+        function update() {
+            if (gameOver) return;
+            drawBackground();
+            
+            frisbees.forEach(f => {
+                if (!f.collected) {
+                    f.glow = (f.glow + 0.1) % (Math.PI * 2);
+                    let pulse = Math.sin(f.glow) * 4;
+                    ctx.shadowBlur = 10 + pulse; ctx.shadowColor = "#ff4500";
+                    ctx.fillStyle = '#ff8c00';
+                    ctx.beginPath(); ctx.ellipse(f.x + 16, f.y + 16, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+                    ctx.shadowBlur = 0;
+                    if (player.x < f.x + 32 && player.x + 28 > f.x && player.y === f.y) { f.collected = true; score += 10; document.getElementById('score').innerText = score; }
+                }
+            });
+
+            drawDoberman(player.x, player.y);
+
+            enemies.forEach(e => {
+                e.x += e.speed;
+                if (e.x > 340) e.x = -60; if (e.x < -60) e.x = 340;
+                ctx.fillStyle = e.type === 'sprinter' ? "#ffff00" : e.type === 'tank' ? "#555" : "#8B4513";
+                ctx.fillRect(e.x, e.y + 4, e.w, e.h);
+                if (player.x < e.x + e.w && player.x + 28 > e.x && player.y > e.y - 10 && player.y < e.y + 10) {
+                    lives--; document.getElementById('lives').innerText = lives;
+                    player.x = 144; player.y = 240;
+                    if (lives <= 0) { gameOver = true; alert("GAME OVER!"); location.reload(); }
+                }
+            });
+
+            if (frisbees.every(f => f.collected)) { speedMult += 0.2; player.x = 144; player.y = 240; spawnFrisbees(); spawnEnemies(); }
+            requestAnimationFrame(update);
+        }
+        spawnFrisbees(); spawnEnemies(); update();
+    </script>
 </body>
 </html>
