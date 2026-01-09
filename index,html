@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dober-Frisbee Atari</title>
+    <style>
+        body { margin: 0; background: #222; overflow: hidden; display: flex; flex-direction: column; align-items: center; font-family: 'Courier New', monospace; color: white; }
+        canvas { background: #556B2F; border: 4px solid #fff; image-rendering: pixelated; margin-top: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .ui { margin: 10px; font-weight: bold; font-size: 1.2rem; text-shadow: 2px 2px #000; }
+        .controls { display: grid; grid-template-columns: repeat(3, 75px); gap: 10px; margin-top: 15px; }
+        button { width: 75px; height: 75px; font-size: 28px; background: #444; color: #fff; border: 3px solid #fff; border-radius: 12px; touch-action: manipulation; active { background: #666; } }
+    </style>
+</head>
+<body>
+    <div class="ui">SCORE: <span id="score">0</span> | LEVEL: <span id="level">1</span></div>
+    <canvas id="game"></canvas>
+    <div class="controls">
+        <div></div><button onclick="move('up')">▲</button><div></div>
+        <button onclick="move('left')">◀</button><button onclick="move('down')">▼</button><button onclick="move('right')">▶</button>
+    </div>
+
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 300; canvas.height = 300;
+
+    let score = 0; let level = 1; let speedMult = 1;
+    const grid = 30;
+    const player = { x: 135, y: 270 };
+    const frisbee = { x: 135, y: 0 };
+    const bgColors = ['#556B2F', '#483D8B', '#8B4513', '#2F4F4F', '#4B0082', '#191970'];
+    let poops = [];
+    let audioCtx, audioStarted = false;
+
+    // Drawing the Doberman with Natural Ears & Cropped Tail
+    function drawDoberman(x, y) {
+        ctx.fillStyle = "#000"; // Main Body
+        ctx.fillRect(x + 5, y + 12, 20, 12); // Torso
+        ctx.fillRect(x + 20, y + 4, 8, 10); // Neck/Head
+        
+        // Natural Ears (Floppy/Rectangular Atari style)
+        ctx.fillRect(x + 17, y + 4, 4, 6); 
+        ctx.fillRect(x + 27, y + 4, 4, 6);
+        
+        // Cropped Tail (Small square stub)
+        ctx.fillRect(x + 2, y + 10, 4, 4);
+
+        // Tan Markings (Chest and Snout)
+        ctx.fillStyle = "#8B4513";
+        ctx.fillRect(x + 23, y + 8, 5, 3); // Snout
+        ctx.fillRect(x + 18, y + 14, 4, 4); // Chest
+    }
+
+    function createPoops() {
+        poops = [];
+        // Add more poops as levels increase
+        let count = Math.min(6 + level, 12); 
+        for(let i = 1; i < count; i++) {
+            poops.push({
+                x: Math.random() * 300,
+                y: (i % 8 + 1) * grid,
+                speed: (Math.random() * 1.5 + 1) * (i % 2 === 0 ? 1 : -1) * speedMult
+            });
+        }
+    }
+
+    function move(dir) {
+        startAudio();
+        if(dir === 'up' && player.y > 0) player.y -= grid;
+        if(dir === 'down' && player.y < 270) player.y += grid;
+        if(dir === 'left' && player.x > 0) player.x -= grid;
+        if(dir === 'right' && player.x < 270) player.x += grid;
+    }
+
+    function startAudio() {
+        if (audioStarted) return;
+        audioStarted = true;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        playAtariDub();
+    }
+
+    // Lo-fi Atari Bassline
+    function playAtariDub() {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        // Alternating low tones for a "busy" feel
+        let baseFreq = level % 2 === 0 ? 52 : 44; 
+        osc.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
+        
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+        
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+        
+        // Slow dubstep-style tempo (approx 100 BPM)
+        setTimeout(playAtariDub, 600);
+    }
+
+    function update() {
+        ctx.clearRect(0, 0, 300, 300);
+        
+        // Draw Frisbee
+        ctx.fillStyle = '#FF4500';
+        ctx.beginPath(); 
+        ctx.ellipse(frisbee.x + 15, frisbee.y + 15, 12, 5, 0, 0, Math.PI * 2); 
+        ctx.fill();
+
+        drawDoberman(player.x, player.y);
+
+        // Draw and Move Poops
+        ctx.fillStyle = '#5C4033';
+        poops.forEach(p => {
+            p.x += p.speed;
+            if(p.x > 300) p.x = -grid; 
+            if(p.x < -grid) p.x = 300;
+            
+            ctx.fillRect(p.x + 6, p.y + 10, 18, 12); // Chunky poop pixels
+
+            // Collision Check
+            if(player.x < p.x + 20 && player.x + 20 > p.x && player.y === p.y) {
+                // Flash red on hit
+                canvas.style.borderColor = "red";
+                setTimeout(() => canvas.style.borderColor = "white", 100);
+                player.x = 135; player.y = 270; 
+            }
+        });
+
+        // Level Up Logic
+        if(player.y <= 0) {
+            score++; 
+            level++; 
+            speedMult += 0.15;
+            document.getElementById('score').innerText = score;
+            document.getElementById('level').innerText = level;
+            
+            // Visual Level Change
+            canvas.style.background = bgColors[level % bgColors
